@@ -1,0 +1,5 @@
+{
+  "name": "eBird 3D Explorer",
+  "description": "A 3D visualization tool for eBird observations.",
+  "requestFramePermissions": ["geolocation"]
+}
