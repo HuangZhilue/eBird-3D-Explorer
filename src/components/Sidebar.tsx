@@ -39,7 +39,6 @@ export default function Sidebar() {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedSpecies, setExpandedSpecies] = useState<Set<string>>(new Set());
   const [expandedLocations, setExpandedLocations] = useState<Set<string>>(new Set());
-  const [expandedLocationSpecies, setExpandedLocationSpecies] = useState<Set<string>>(new Set());
   const { speciesDetailsCache, updateSpeciesCache } = useBirdStore();
   const [isBackgroundLoading, setIsBackgroundLoading] = useState(false);
   const [loadProgress, setLoadProgress] = useState({ current: 0, total: 0 });
@@ -127,16 +126,6 @@ export default function Sidebar() {
       const next = new Set(prev);
       if (next.has(locId)) next.delete(locId);
       else next.add(locId);
-      return next;
-    });
-  };
-
-  const toggleExpandLocationSpecies = (locId: string, speciesCode: string) => {
-    const key = `${locId}-${speciesCode}`;
-    setExpandedLocationSpecies(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
       return next;
     });
   };
@@ -505,49 +494,27 @@ export default function Sidebar() {
                     
                     {isExpanded && (
                       <div className="bg-slate-50 border-t border-slate-100">
-                        {hotspot.speciesArray.map(sp => {
-                          const isSpExpanded = expandedLocationSpecies.has(`${hotspot.locId}-${sp.code}`);
-                          return (
-                            <div key={sp.code} className="border-b border-slate-200 last:border-0">
-                              <div 
-                                className="flex items-center justify-between p-2 hover:bg-slate-100 cursor-pointer"
-                                onClick={() => toggleExpandLocationSpecies(hotspot.locId, sp.code)}
-                              >
-                                <div className="flex-1 min-w-0 pr-2">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-medium text-sm text-slate-700 truncate">{sp.name}</span>
-                                    {sp.isNotable && (
-                                      <span className="text-[10px] px-1.5 py-0.5 rounded-full text-red-600 bg-red-100 shrink-0">稀有</span>
-                                    )}
-                                  </div>
-                                  <div className="text-[10px] text-slate-500 mt-0.5">
-                                    最新: {new Date(sp.latestRecord.obsDt).toLocaleDateString()}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                  <span className="text-xs text-blue-600 font-medium">{sp.records.length} 条记录</span>
-                                  {isSpExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
-                                </div>
+                        {hotspot.speciesArray.map(sp => (
+                          <div key={sp.code} className="border-b border-slate-200 last:border-0 p-2">
+                            <div className="flex items-center justify-between mb-1">
+                              <div className="flex items-center gap-2 min-w-0 pr-2">
+                                <span className="font-medium text-sm text-slate-700 truncate">{sp.name}</span>
+                                {sp.isNotable && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full text-red-600 bg-red-100 shrink-0">稀有</span>
+                                )}
                               </div>
-                              
-                              {isSpExpanded && (
-                                <div className="bg-white border-t border-slate-100 p-2 space-y-1">
-                                  {sp.records.map((rec, i) => (
-                                    <div key={i} className="flex flex-col text-xs border-b border-slate-50 last:border-0 pb-1.5 pt-1 last:pb-0">
-                                      <div className="flex justify-between items-center">
-                                        <span className="text-slate-500">{new Date(rec.obsDt).toLocaleString()}</span>
-                                        <span className="font-medium text-slate-700">{rec.howMany || 'X'} 只</span>
-                                      </div>
-                                      {rec.userDisplayName && (
-                                        <div className="text-slate-400 mt-0.5 truncate">👤 {rec.userDisplayName}</div>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
+                              <div className="font-bold text-slate-700 whitespace-nowrap shrink-0">
+                                {sp.latestRecord.howMany || 'X'} 只
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between text-[10px] text-slate-500">
+                              <span>{new Date(sp.latestRecord.obsDt).toLocaleString()}</span>
+                              {sp.latestRecord.userDisplayName && (
+                                <span className="truncate ml-2">👤 {sp.latestRecord.userDisplayName}</span>
                               )}
                             </div>
-                          );
-                        })}
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>

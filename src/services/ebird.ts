@@ -104,19 +104,36 @@ export const fetchSpeciesObservations = async (
 export const fetchRegionCode = async (
   apiKey: string,
   lat: number,
-  lng: number,
-  regionType: 'subnational1' | 'subnational2' = 'subnational1'
+  lng: number
 ): Promise<{ code: string; name: string } | null> => {
-  const response = await fetch(
-    `${EBIRD_API_BASE}/ref/geo/pos/${regionType}/${lat}/${lng}`,
-    { headers: { 'X-eBirdApiToken': apiKey } }
-  );
-  if (!response.ok) return null;
-  const data = await response.json();
-  if (data && data.length > 0) {
-    return { code: data[0].code, name: data[0].name };
+  try {
+    // 1. Fetch nearby hotspots
+    const hotspotsResponse = await fetch(
+      `${EBIRD_API_BASE}/ref/hotspot/geo?lat=${lat}&lng=${lng}&dist=10&fmt=json`,
+      { headers: { 'X-eBirdApiToken': apiKey } }
+    );
+    if (!hotspotsResponse.ok) return null;
+    const hotspots = await hotspotsResponse.json();
+    
+    if (!hotspots || hotspots.length === 0) return null;
+    
+    // 2. Get info for the closest hotspot to find its region
+    const closestHotspot = hotspots[0];
+    const infoResponse = await fetch(
+      `${EBIRD_API_BASE}/ref/hotspot/info/${closestHotspot.locId}`,
+      { headers: { 'X-eBirdApiToken': apiKey } }
+    );
+    if (!infoResponse.ok) return null;
+    const info = await infoResponse.json();
+    
+    if (info && info.subnational1Code && info.subnational1Name) {
+      return { code: info.subnational1Code, name: info.subnational1Name };
+    }
+    return null;
+  } catch (err) {
+    console.error('Failed to fetch region code:', err);
+    return null;
   }
-  return null;
 };
 
 export const fetchRegionObservations = async (

@@ -12,14 +12,30 @@ import { gcj02ToWgs84 } from '../lib/coord';
 import { fetchRegionCode, fetchRegionGeoJSON } from '../services/ebird';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
+// Polyfill for WebGL context limits to prevent deck.gl crashes
+if (typeof window !== 'undefined') {
+  const patchLimits = (Context: any) => {
+    if (Context && !Context.prototype.limits) {
+      Object.defineProperty(Context.prototype, 'limits', {
+        get() {
+          return { maxTextureDimension2D: 4096 };
+        },
+        configurable: true
+      });
+    }
+  };
+  patchLimits((window as any).WebGLRenderingContext);
+  patchLimits((window as any).WebGL2RenderingContext);
+}
+
 // Patch HeatmapLayer to avoid device.limits error
 class HeatmapLayer extends DeckGLHeatmapLayer {
   _setupTextureParams() {
-    const { device } = this.context;
-    const { weightsTextureSize } = this.props;
+    const { device } = this.context as any;
+    const { weightsTextureSize } = this.props as any;
     const maxDim = device?.limits?.maxTextureDimension2D || 4096;
     const textureSize = Math.min(weightsTextureSize as number, maxDim);
-    const floatSupported = ['float32-renderable-webgl', 'texture-blend-float-webgl'].every(f => device.features.has(f as any));
+    const floatSupported = device?.features ? ['float32-renderable-webgl', 'texture-blend-float-webgl'].every(f => device.features.has(f)) : false;
     const format = floatSupported ? 'rgba32float' : 'rgba8unorm';
     const weightsScale = floatSupported ? 1 : 1 / 255;
     this.setState({ textureSize, format, weightsScale });
