@@ -3,12 +3,13 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import MapboxMap from 'react-map-gl/maplibre';
 import DeckGL from '@deck.gl/react';
 import { FlyToInterpolator, LinearInterpolator } from '@deck.gl/core';
-import { ColumnLayer } from '@deck.gl/layers';
+import { ColumnLayer, GeoJsonLayer } from '@deck.gl/layers';
 import { HeatmapLayer as DeckGLHeatmapLayer } from '@deck.gl/aggregation-layers';
 import { ScatterplotLayer, PolygonLayer } from '@deck.gl/layers';
-import { Compass, Box, Square } from 'lucide-react';
+import { Compass, Box, Square, MapPin, Map as MapArea, Loader2 } from 'lucide-react';
 import { useBirdStore, HotspotData } from '../store/useBirdStore';
 import { gcj02ToWgs84 } from '../lib/coord';
+import { fetchRegionCode, fetchRegionGeoJSON } from '../services/ebird';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 // Patch HeatmapLayer to avoid device.limits error
@@ -49,25 +50,46 @@ export default function Map() {
   const { 
     isHeatmap, getAggregatedData, taxonomy, viewState, setViewState, 
     lat, lng, radius, mapStyle, useChinaOffset, showRadiusMask,
-    visualScale, heightScale
+    visualScale, heightScale,
+    searchMode, setSearchMode, regionCode, regionName, setRegion, apiKey
   } = useBirdStore();
   
   const [hoverInfo, setHoverInfo] = useState<any>(null);
   const [lastHoverInfo, setLastHoverInfo] = useState<any>(null);
   const [contextMenu, setContextMenu] = useState<{x: number, y: number, lng: number, lat: number} | null>(null);
+  const [regionGeoJSON, setRegionGeoJSON] = useState<any>(null);
+  const [isRegionLoading, setIsRegionLoading] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const lastOpenTime = useRef<number>(0);
   
   const pressTimer = useRef<NodeJS.Timeout | null>(null);
   const pressStartPos = useRef<{x: number, y: number} | null>(null);
 
   useEffect(() => {
-    const handleClickOutside = () => setContextMenu(null);
-    window.addEventListener('click', handleClickOutside);
+    const handleClickOutside = (e: MouseEvent) => {
+      // Ignore clicks if the menu was just opened (prevents immediate closing on mouse up)
+      if (Date.now() - lastOpenTime.current < 300) return;
+      
+      // If clicking inside the menu, don't close it
+      if (menuRef.current && menuRef.current.contains(e.target as Node)) return;
+      
+      setContextMenu(null);
+    };
+    window.addEventListener('mousedown', handleClickOutside);
     window.addEventListener('contextmenu', handleClickOutside);
     return () => {
-      window.removeEventListener('click', handleClickOutside);
+      window.removeEventListener('mousedown', handleClickOutside);
       window.removeEventListener('contextmenu', handleClickOutside);
     };
   }, []);
+
+  useEffect(() => {
+    if (searchMode === 'region' && regionCode) {
+      fetchRegionGeoJSON(regionCode).then(setRegionGeoJSON).catch(console.error);
+    } else {
+      setRegionGeoJSON(null);
+    }
+  }, [searchMode, regionCode]);
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0 && e.button !== 2) return;
@@ -83,6 +105,7 @@ export default function Map() {
           lng: lastHoverInfo.coordinate[0],
           lat: lastHoverInfo.coordinate[1]
         });
+        lastOpenTime.current = Date.now();
       }
     }, 500);
   };
@@ -191,7 +214,7 @@ export default function Map() {
     }
 
     // Radius Mask Layer
-    if (showRadiusMask) {
+    if (showRadiusMask && searchMode === 'radius') {
       // Create a large rectangle covering the world with a circular hole
       const worldBounds = [
         [-180, 90],
@@ -232,6 +255,65 @@ export default function Map() {
           pickable: false,
           stroked: false,
           filled: true
+        })
+      );
+    }
+
+    // Regional Mask Layer
+    if (showRadiusMask && searchMode === 'region' && regionGeoJSON) {
+      const worldBounds = [
+        [-180, 90],
+        [-180, -90],
+        [180, -90],
+        [180, 90],
+        [-180, 90]
+      ];
+
+      // Extract all polygons from GeoJSON to create holes
+      const holes: [number, number][][] = [];
+      
+      const processGeometry = (geometry: any) => {
+        if (geometry.type === 'Polygon') {
+          holes.push(geometry.coordinates[0]);
+        } else if (geometry.type === 'MultiPolygon') {
+          geometry.coordinates.forEach((poly: any) => {
+            holes.push(poly[0]);
+          });
+        }
+      };
+
+      if (regionGeoJSON.type === 'FeatureCollection') {
+        regionGeoJSON.features.forEach((f: any) => processGeometry(f.geometry));
+      } else if (regionGeoJSON.type === 'Feature') {
+        processGeometry(regionGeoJSON.geometry);
+      } else {
+        processGeometry(regionGeoJSON);
+      }
+
+      baseLayers.push(
+        new PolygonLayer({
+          id: 'region-mask',
+          data: [{
+            polygon: [worldBounds, ...holes]
+          }],
+          getPolygon: d => d.polygon,
+          getFillColor: [0, 0, 0, 120],
+          pickable: false,
+          stroked: false,
+          filled: true
+        })
+      );
+      
+      // Also add a subtle border for the region
+      baseLayers.push(
+        new GeoJsonLayer({
+          id: 'region-border',
+          data: regionGeoJSON,
+          stroked: true,
+          filled: false,
+          getLineColor: [59, 130, 246, 200],
+          getLineWidth: 2,
+          lineWidthMinPixels: 2
         })
       );
     }
@@ -445,17 +527,20 @@ export default function Map() {
       
       {contextMenu && (
         <div 
-          className="fixed bg-white shadow-lg rounded border border-slate-200 py-1 z-50 text-sm min-w-[160px]"
+          ref={menuRef}
+          className="fixed bg-white shadow-lg rounded border border-slate-200 py-1 z-50 text-sm min-w-[180px]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onPointerDown={(e) => e.stopPropagation()}
         >
           <div className="px-4 py-2 border-b border-slate-100 text-xs text-slate-500 font-mono">
             {contextMenu.lat.toFixed(4)}, {contextMenu.lng.toFixed(4)}
           </div>
+          
           <button 
-            className="w-full text-left px-4 py-2 hover:bg-slate-100 text-slate-700 transition-colors"
+            className="w-full text-left px-4 py-2 hover:bg-slate-100 text-slate-700 transition-colors flex items-center gap-2"
             onClick={(e) => {
               e.stopPropagation();
+              setSearchMode('radius');
               useBirdStore.getState().setSearchParams({
                 lng: Number(contextMenu.lng.toFixed(4)),
                 lat: Number(contextMenu.lat.toFixed(4))
@@ -463,7 +548,37 @@ export default function Map() {
               setContextMenu(null);
             }}
           >
+            <MapPin className="w-4 h-4 text-blue-500" />
             设为搜索中心点
+          </button>
+
+          <button 
+            className="w-full text-left px-4 py-2 hover:bg-slate-100 text-slate-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+            disabled={isRegionLoading}
+            onClick={async (e) => {
+              e.stopPropagation();
+              if (!apiKey) return alert('请先设置 API Key');
+              
+              setIsRegionLoading(true);
+              try {
+                const region = await fetchRegionCode(apiKey, contextMenu.lat, contextMenu.lng);
+                if (region) {
+                  setRegion(region.code, region.name);
+                  setSearchMode('region');
+                } else {
+                  alert('无法识别该位置的省级区域');
+                }
+              } catch (err) {
+                console.error(err);
+                alert('区域查询失败');
+              } finally {
+                setIsRegionLoading(false);
+                setContextMenu(null);
+              }
+            }}
+          >
+            {isRegionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapArea className="w-4 h-4 text-green-500" />}
+            查询省级区域数据
           </button>
         </div>
       )}

@@ -32,6 +32,9 @@ interface BirdStoreState {
   lng: number;
   radius: number;
   daysBack: number;
+  searchMode: 'radius' | 'region';
+  regionCode: string;
+  regionName: string;
   
   viewState: {
     longitude: number;
@@ -68,6 +71,8 @@ interface BirdStoreState {
   setUseChinaOffset: (use: boolean) => void;
   setVisualScale: (scale: number) => void;
   setHeightScale: (scale: number) => void;
+  setSearchMode: (mode: 'radius' | 'region') => void;
+  setRegion: (code: string, name: string) => void;
   
   getAggregatedData: () => HotspotData[];
   updateSpeciesCache: (code: string, details: EbirdObservation[]) => void;
@@ -92,6 +97,9 @@ export const useBirdStore = create<BirdStoreState>()(
       lng: 116.4074,
       radius: 25,
       daysBack: 14,
+      searchMode: 'radius',
+      regionCode: '',
+      regionName: '',
       
       viewState: {
         longitude: 116.4074,
@@ -171,6 +179,8 @@ export const useBirdStore = create<BirdStoreState>()(
       setUseChinaOffset: (useChinaOffset) => set({ useChinaOffset }),
       setVisualScale: (visualScale) => set({ visualScale }),
       setHeightScale: (heightScale) => set({ heightScale }),
+      setSearchMode: (searchMode) => set({ searchMode }),
+      setRegion: (regionCode, regionName) => set({ regionCode, regionName }),
       
       updateSpeciesCache: (code, details) => set((state) => ({
         speciesDetailsCache: { ...state.speciesDetailsCache, [code]: details }
@@ -276,6 +286,9 @@ export const useBirdStore = create<BirdStoreState>()(
         useChinaOffset: state.useChinaOffset,
         visualScale: state.visualScale,
         heightScale: state.heightScale,
+        searchMode: state.searchMode,
+        regionCode: state.regionCode,
+        regionName: state.regionName,
         viewState: state.viewState,
       }),
     }

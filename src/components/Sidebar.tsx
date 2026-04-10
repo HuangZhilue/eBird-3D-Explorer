@@ -1,6 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useBirdStore } from '../store/useBirdStore';
-import { fetchRecentObservations, fetchNotableObservations, fetchTaxonomy, fetchSpeciesObservations } from '../services/ebird';
+import { 
+  fetchRecentObservations, 
+  fetchNotableObservations, 
+  fetchTaxonomy, 
+  fetchSpeciesObservations,
+  fetchRegionObservations,
+  fetchRegionNotableObservations
+} from '../services/ebird';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -20,15 +27,19 @@ export default function Sidebar() {
     visualScale, setVisualScale,
     heightScale, setHeightScale,
     lat, lng, radius, daysBack, setSearchParams,
+    searchMode, setSearchMode, regionCode, regionName,
     observations, taxonomy, selectedSpecies, toggleSpeciesSelection,
     selectAllSpecies, deselectAllSpecies,
     setObservations, setNotableObservations, setTaxonomy,
-    isHeatmap, setIsHeatmap, flyTo, notableObservations
+    isHeatmap, setIsHeatmap, flyTo, notableObservations,
+    getAggregatedData
   } = useBirdStore();
 
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedSpecies, setExpandedSpecies] = useState<Set<string>>(new Set());
+  const [expandedLocations, setExpandedLocations] = useState<Set<string>>(new Set());
+  const [expandedLocationSpecies, setExpandedLocationSpecies] = useState<Set<string>>(new Set());
   const { speciesDetailsCache, updateSpeciesCache } = useBirdStore();
   const [isBackgroundLoading, setIsBackgroundLoading] = useState(false);
   const [loadProgress, setLoadProgress] = useState({ current: 0, total: 0 });
@@ -111,6 +122,25 @@ export default function Sidebar() {
     });
   };
 
+  const toggleExpandLocation = (locId: string) => {
+    setExpandedLocations(prev => {
+      const next = new Set(prev);
+      if (next.has(locId)) next.delete(locId);
+      else next.add(locId);
+      return next;
+    });
+  };
+
+  const toggleExpandLocationSpecies = (locId: string, speciesCode: string) => {
+    const key = `${locId}-${speciesCode}`;
+    setExpandedLocationSpecies(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   useEffect(() => {
     if (apiKey) {
       fetchTaxonomy(apiKey).then(setTaxonomy).catch(console.error);
@@ -138,10 +168,18 @@ export default function Sidebar() {
     if (!apiKey) return alert('Please enter eBird API Key');
     setLoading(true);
     try {
-      const [recent, notable] = await Promise.all([
-        fetchRecentObservations(apiKey, lat, lng, radius, daysBack),
-        fetchNotableObservations(apiKey, lat, lng, radius, daysBack)
-      ]);
+      let recent, notable;
+      if (searchMode === 'region' && regionCode) {
+        [recent, notable] = await Promise.all([
+          fetchRegionObservations(apiKey, regionCode, daysBack),
+          fetchRegionNotableObservations(apiKey, regionCode, daysBack)
+        ]);
+      } else {
+        [recent, notable] = await Promise.all([
+          fetchRecentObservations(apiKey, lat, lng, radius, daysBack),
+          fetchNotableObservations(apiKey, lat, lng, radius, daysBack)
+        ]);
+      }
       setObservations(recent);
       setNotableObservations(notable);
     } catch (error) {
@@ -243,10 +281,11 @@ export default function Sidebar() {
       </div>
 
       <Tabs defaultValue="data" className="flex flex-col min-h-0 overflow-hidden">
-        <TabsList className="w-full justify-start rounded-none border-b border-slate-200 px-4 bg-white h-12 shrink-0">
-          <TabsTrigger value="data" className="data-[state=active]:border-b-2 data-[state=active]:border-blue-600 rounded-none">数据</TabsTrigger>
-          <TabsTrigger value="filter" className="data-[state=active]:border-b-2 data-[state=active]:border-blue-600 rounded-none">过滤</TabsTrigger>
-          <TabsTrigger value="settings" className="data-[state=active]:border-b-2 data-[state=active]:border-blue-600 rounded-none">设置</TabsTrigger>
+        <TabsList className="w-full justify-start rounded-none border-b border-slate-200 px-4 bg-white h-12 shrink-0 overflow-x-auto hide-scrollbar">
+          <TabsTrigger value="data" className="data-[state=active]:border-b-2 data-[state=active]:border-blue-600 rounded-none whitespace-nowrap">按物种</TabsTrigger>
+          <TabsTrigger value="locations" className="data-[state=active]:border-b-2 data-[state=active]:border-blue-600 rounded-none whitespace-nowrap">按地点</TabsTrigger>
+          <TabsTrigger value="filter" className="data-[state=active]:border-b-2 data-[state=active]:border-blue-600 rounded-none whitespace-nowrap">过滤</TabsTrigger>
+          <TabsTrigger value="settings" className="data-[state=active]:border-b-2 data-[state=active]:border-blue-600 rounded-none whitespace-nowrap">设置</TabsTrigger>
         </TabsList>
 
         <TabsContent 
@@ -255,20 +294,35 @@ export default function Sidebar() {
         >
           {/* 数据页签配置区 */}
           <div className="p-4 space-y-4 border-b border-slate-100 bg-white overflow-y-auto">
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-600">
+            <div className={`p-3 border rounded-lg text-sm ${searchMode === 'region' ? 'bg-blue-50 border-blue-200 text-blue-800' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
               <p className="flex items-center gap-2 mb-1">
-                <Navigation className="w-4 h-4" />
-                <strong>位置选择</strong>
+                <Navigation className={`w-4 h-4 ${searchMode === 'region' ? 'text-blue-600' : ''}`} />
+                <strong>{searchMode === 'region' ? '区域查询模式' : '位置选择'}</strong>
               </p>
-              <p>在地图上长按（或右键点击）任意位置以设置搜索中心点。</p>
+              <p>{searchMode === 'region' ? `当前区域：${regionName || regionCode}` : '在地图上长按（或右键点击）任意位置以设置搜索中心点。'}</p>
               <p className="mt-2 text-xs font-mono bg-white p-1 rounded border border-slate-100">
-                纬度: {lat.toFixed(4)}, 经度: {lng.toFixed(4)}
+                {searchMode === 'region' ? `区域代码: ${regionCode}` : `纬度: ${lat.toFixed(4)}, 经度: ${lng.toFixed(4)}`}
               </p>
+              {searchMode === 'region' && (
+                <Button 
+                  variant="link" 
+                  size="sm" 
+                  className="h-auto p-0 text-[10px] text-blue-500 mt-2"
+                  onClick={() => setSearchMode('radius')}
+                >
+                  切换回半径查询模式
+                </Button>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <Label className="text-xs">搜索半径 (公里)</Label>
-                <Input type="number" value={radius} onChange={e => setSearchParams({ radius: Number(e.target.value) })} />
+                <Input 
+                  type="number" 
+                  value={radius} 
+                  onChange={e => setSearchParams({ radius: Number(e.target.value) })} 
+                  disabled={searchMode === 'region'}
+                />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">过去几天</Label>
@@ -339,8 +393,8 @@ export default function Sidebar() {
                             </span>
                           </div>
                           <div className="text-[10px] text-slate-500 mt-0.5 flex justify-between">
-                            <span>最近: {stat.latestCount}只 ({new Date(stat.latestTime).toLocaleDateString()})</span>
-                            <span className="font-bold text-blue-600">总计: {stat.totalCount}</span>
+                            <span>{stat.records.length} 条记录</span>
+                            <span>最新: {new Date(stat.latestTime).toLocaleDateString()}</span>
                           </div>
                         </div>
                       </div>
@@ -352,13 +406,14 @@ export default function Sidebar() {
                     {isExpanded && (
                       <div className="bg-slate-50 p-2 border-t border-slate-100 text-xs space-y-2">
                         {stat.records.sort((a, b) => new Date(b.obsDt).getTime() - new Date(a.obsDt).getTime()).map((rec, i) => (
-                          <div key={i} className="flex justify-between items-start border-b border-slate-200 last:border-0 pb-1 last:pb-0">
-                            <div className="flex-1 pr-2">
-                              <div className="font-medium text-slate-700 truncate" title={rec.locName}>{rec.locName}</div>
-                              <div className="text-slate-500">{new Date(rec.obsDt).toLocaleString()}</div>
-                            </div>
-                            <div className="font-bold text-slate-700 whitespace-nowrap">
-                              {rec.howMany || 'X'} 只
+                          <div key={i} className="flex flex-col border-b border-slate-200 last:border-0 pb-1.5 pt-1 last:pb-0">
+                            <div className="font-medium text-slate-700 truncate" title={rec.locName}>{rec.locName}</div>
+                            <div className="flex items-center gap-2 text-[10px] mt-0.5 flex-wrap">
+                              <span className="text-slate-500">{new Date(rec.obsDt).toLocaleString()}</span>
+                              <span className="font-bold text-slate-700">{rec.howMany || 'X'} 只</span>
+                              {rec.userDisplayName && (
+                                <span className="text-slate-400 truncate">👤 {rec.userDisplayName}</span>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -370,6 +425,135 @@ export default function Sidebar() {
               {speciesStats.length === 0 && (
                 <p className="text-sm text-slate-500 text-center py-4">暂无数据</p>
               )}
+          </div>
+        </TabsContent>
+
+        <TabsContent 
+          value="locations" 
+          className="m-0 flex-1 grid grid-rows-[1fr] min-h-0 overflow-hidden"
+        >
+          <div className="overflow-y-auto bg-slate-50 p-2 space-y-2 min-h-0">
+            {(() => {
+              const enrichedHotspots = getAggregatedData().map(hotspot => {
+                const locRecords: any[] = [];
+                const seenSubIds = new Set<string>();
+                
+                hotspot.observations.forEach(obs => {
+                  const key = `${obs.subId}-${obs.speciesCode}`;
+                  if (!seenSubIds.has(key)) {
+                    seenSubIds.add(key);
+                    locRecords.push(obs);
+                  }
+                });
+                
+                Object.values(speciesDetailsCache).forEach(detailsList => {
+                  detailsList.forEach(obs => {
+                    if (obs.locId === hotspot.locId) {
+                      const key = `${obs.subId}-${obs.speciesCode}`;
+                      if (!seenSubIds.has(key)) {
+                        seenSubIds.add(key);
+                        locRecords.push(obs);
+                      }
+                    }
+                  });
+                });
+                
+                const speciesGroups = new Map<string, any[]>();
+                locRecords.forEach(rec => {
+                  if (!speciesGroups.has(rec.speciesCode)) {
+                    speciesGroups.set(rec.speciesCode, []);
+                  }
+                  speciesGroups.get(rec.speciesCode)!.push(rec);
+                });
+                
+                const speciesArray = Array.from(speciesGroups.entries()).map(([code, records]) => {
+                  const name = taxonomy[code]?.comName || code;
+                  const isNotable = notableObservations.some(n => n.speciesCode === code);
+                  const sortedRecords = records.sort((a, b) => new Date(b.obsDt).getTime() - new Date(a.obsDt).getTime());
+                  const latestRecord = sortedRecords[0];
+                  return { code, name, isNotable, records: sortedRecords, latestRecord };
+                }).sort((a, b) => b.records.length - a.records.length);
+
+                return { ...hotspot, locRecords, speciesArray };
+              }).sort((a, b) => b.locRecords.length - a.locRecords.length);
+
+              if (enrichedHotspots.length === 0) {
+                return <p className="text-sm text-slate-500 text-center py-4">暂无数据</p>;
+              }
+
+              return enrichedHotspots.map(hotspot => {
+                const isExpanded = expandedLocations.has(hotspot.locId);
+                return (
+                  <div key={hotspot.locId} className="bg-white border border-slate-200 rounded overflow-hidden shadow-sm">
+                    <div 
+                      className="flex items-center p-3 hover:bg-slate-50 cursor-pointer"
+                      onClick={() => toggleExpandLocation(hotspot.locId)}
+                    >
+                      <div className="flex-1 min-w-0 pr-2">
+                        <div className="font-medium text-sm text-slate-800 truncate" title={hotspot.locName}>
+                          {hotspot.locName}
+                        </div>
+                        <div className="text-xs text-slate-500 mt-1 flex gap-3">
+                          <span>{hotspot.speciesArray.length} 种鸟类</span>
+                          <span>{hotspot.locRecords.length} 条观测记录</span>
+                        </div>
+                      </div>
+                      <div className="text-slate-400 shrink-0">
+                        {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                      </div>
+                    </div>
+                    
+                    {isExpanded && (
+                      <div className="bg-slate-50 border-t border-slate-100">
+                        {hotspot.speciesArray.map(sp => {
+                          const isSpExpanded = expandedLocationSpecies.has(`${hotspot.locId}-${sp.code}`);
+                          return (
+                            <div key={sp.code} className="border-b border-slate-200 last:border-0">
+                              <div 
+                                className="flex items-center justify-between p-2 hover:bg-slate-100 cursor-pointer"
+                                onClick={() => toggleExpandLocationSpecies(hotspot.locId, sp.code)}
+                              >
+                                <div className="flex-1 min-w-0 pr-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium text-sm text-slate-700 truncate">{sp.name}</span>
+                                    {sp.isNotable && (
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded-full text-red-600 bg-red-100 shrink-0">稀有</span>
+                                    )}
+                                  </div>
+                                  <div className="text-[10px] text-slate-500 mt-0.5">
+                                    最新: {new Date(sp.latestRecord.obsDt).toLocaleDateString()}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="text-xs text-blue-600 font-medium">{sp.records.length} 条记录</span>
+                                  {isSpExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                                </div>
+                              </div>
+                              
+                              {isSpExpanded && (
+                                <div className="bg-white border-t border-slate-100 p-2 space-y-1">
+                                  {sp.records.map((rec, i) => (
+                                    <div key={i} className="flex flex-col text-xs border-b border-slate-50 last:border-0 pb-1.5 pt-1 last:pb-0">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-slate-500">{new Date(rec.obsDt).toLocaleString()}</span>
+                                        <span className="font-medium text-slate-700">{rec.howMany || 'X'} 只</span>
+                                      </div>
+                                      {rec.userDisplayName && (
+                                        <div className="text-slate-400 mt-0.5 truncate">👤 {rec.userDisplayName}</div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
           </div>
         </TabsContent>
 
