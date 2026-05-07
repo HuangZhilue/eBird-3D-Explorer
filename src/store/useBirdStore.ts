@@ -82,7 +82,7 @@ interface BirdStoreState {
 export const useBirdStore = create<BirdStoreState>()(
   persist(
     (set, get) => ({
-      apiKey: import.meta.env.VITE_EBIRD_API_KEY || '',
+      apiKey: '',
       setApiKey: (key) => set({ apiKey: key }),
 
       observations: [],
