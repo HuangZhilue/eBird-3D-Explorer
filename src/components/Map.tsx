@@ -148,7 +148,7 @@ export default function Map() {
 
     data.forEach(hotspot => {
       // We'll show individual records as requested
-      const obsList = [...hotspot.observations];
+      const obsList = hotspot.observations.filter(o => o && o.obsDt);
 
       // Sort for stacking (Bottom to Top)
       // Goal: "Pyramid Stacking" - Larger disks must be below smaller disks to prevent occlusion.

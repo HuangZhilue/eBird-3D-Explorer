@@ -195,7 +195,8 @@ export const useBirdStore = create<BirdStoreState>()(
         let changed = false;
 
         Object.entries(speciesDetailsCache).forEach(([code, records]) => {
-          const validRecords = records.filter(r => new Date(r.obsDt) > thirtyDaysAgo);
+          if (!records) return;
+          const validRecords = records.filter(r => r && r.obsDt && new Date(r.obsDt) > thirtyDaysAgo);
           if (validRecords.length !== records.length) {
             changed = true;
           }
@@ -219,11 +220,11 @@ export const useBirdStore = create<BirdStoreState>()(
         // Use cached details if available for selected species, otherwise fallback to the single observation
         const allObs: EbirdObservation[] = [];
         observations.forEach(obs => {
-          if (blacklist.includes(obs.speciesCode) || !selectedSpecies.includes(obs.speciesCode)) return;
+          if (!obs || blacklist.includes(obs.speciesCode) || !selectedSpecies.includes(obs.speciesCode)) return;
           
           const cached = speciesDetailsCache[obs.speciesCode];
           if (cached && cached.length > 0) {
-            allObs.push(...cached);
+            allObs.push(...cached.filter(Boolean));
           } else {
             allObs.push(obs);
           }

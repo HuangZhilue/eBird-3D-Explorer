@@ -15,6 +15,10 @@ console.error = (...args) => {
 window.addEventListener('error', (e) => {
   if (e.message === 'ResizeObserver loop limit exceeded' || e.message === 'ResizeObserver loop completed with undelivered notifications.') {
     e.stopImmediatePropagation();
+    const viteOverlay = document.querySelector('vite-error-overlay');
+    if (viteOverlay) {
+      viteOverlay.remove();
+    }
   }
 });
 

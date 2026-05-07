@@ -16,7 +16,7 @@ import { Slider } from '@/components/ui/slider';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
-import { Settings, Map as MapIcon, Layers, Search, Loader2, Navigation, ChevronDown, ChevronRight } from 'lucide-react';
+import { Settings, Map as MapIcon, Layers, Search, Loader2, Navigation, ChevronDown, ChevronRight, Menu, X } from 'lucide-react';
 
 export default function Sidebar() {
   const {
@@ -35,6 +35,8 @@ export default function Sidebar() {
     getAggregatedData
   } = useBirdStore();
 
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isConfigExpanded, setIsConfigExpanded] = useState(true);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedSpecies, setExpandedSpecies] = useState<Set<string>>(new Set());
@@ -69,8 +71,9 @@ export default function Sidebar() {
         // 2. The latest observation in cache is older than the one we just fetched
         let needsSync = !cached || cached.length === 0;
         if (cached && latestObs) {
-          const cachedLatest = [...cached].sort((a, b) => new Date(b.obsDt).getTime() - new Date(a.obsDt).getTime())[0];
-          if (new Date(latestObs.obsDt) > new Date(cachedLatest.obsDt)) {
+          const validCached = cached.filter(r => r && r.obsDt);
+          const cachedLatest = [...validCached].sort((a, b) => new Date(b.obsDt).getTime() - new Date(a.obsDt).getTime())[0];
+          if (cachedLatest && new Date(latestObs.obsDt) > new Date(cachedLatest.obsDt)) {
             needsSync = true;
           }
         }
@@ -213,9 +216,10 @@ export default function Sidebar() {
       
       if (details) {
         // Use detailed records if available
-        stat.records = details;
-        stat.totalCount = details.reduce((sum, r) => sum + (r.howMany || 1), 0);
-        const latest = [...details].sort((a, b) => new Date(b.obsDt).getTime() - new Date(a.obsDt).getTime())[0];
+        const validDetails = details.filter(r => r && r.obsDt);
+        stat.records = validDetails;
+        stat.totalCount = validDetails.reduce((sum, r) => sum + (r.howMany || 1), 0);
+        const latest = [...validDetails].sort((a, b) => new Date(b.obsDt).getTime() - new Date(a.obsDt).getTime())[0];
         if (latest) {
           stat.latestTime = latest.obsDt;
           stat.latestCount = latest.howMany || 1;
@@ -261,13 +265,38 @@ export default function Sidebar() {
   });
 
   return (
-    <div className="w-80 h-screen max-h-screen bg-white border-r border-slate-200 grid grid-rows-[auto_1fr] shadow-lg z-10 relative overflow-hidden">
-      <div className="p-4 border-b border-slate-200 bg-slate-50">
-        <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-          <MapIcon className="w-5 h-5 text-blue-600" />
-          eBird 3D Explorer
-        </h1>
-      </div>
+    <>
+      <button 
+        className="md:hidden absolute top-4 left-4 z-40 p-2 bg-white rounded-md shadow-md text-slate-700"
+        onClick={() => setIsMobileOpen(true)}
+      >
+        <Menu className="w-5 h-5" />
+      </button>
+
+      {isMobileOpen && (
+        <div 
+          className="md:hidden fixed inset-0 bg-black/50 z-40 transition-opacity"
+          onClick={() => setIsMobileOpen(false)}
+        />
+      )}
+
+      <div className={`
+        fixed inset-y-0 left-0 w-80 shrink-0 h-screen max-h-screen bg-white border-r border-slate-200 grid grid-rows-[auto_1fr] shadow-2xl z-50 transform transition-transform duration-300 ease-in-out overflow-hidden
+        md:relative md:translate-x-0 md:shadow-lg md:z-10
+        ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
+        <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+          <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+            <MapIcon className="w-5 h-5 text-blue-600" />
+            eBird 3D Explorer
+          </h1>
+          <button 
+            className="md:hidden p-1 text-slate-500 hover:text-slate-800 rounded"
+            onClick={() => setIsMobileOpen(false)}
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
       <Tabs defaultValue="data" className="flex flex-col min-h-0 overflow-hidden">
         <TabsList className="w-full justify-start rounded-none border-b border-slate-200 px-4 bg-white h-12 shrink-0 overflow-x-auto hide-scrollbar">
@@ -279,75 +308,89 @@ export default function Sidebar() {
 
         <TabsContent 
           value="data" 
-          className="m-0 flex-1 grid grid-rows-[auto_1fr] min-h-0 overflow-hidden"
+          className="m-0 flex-1 flex flex-col min-h-0 overflow-hidden"
         >
-          {/* 数据页签配置区 */}
-          <div className="p-4 space-y-4 border-b border-slate-100 bg-white overflow-y-auto">
-            <div className={`p-3 border rounded-lg text-sm ${searchMode === 'region' ? 'bg-blue-50 border-blue-200 text-blue-800' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
-              <p className="flex items-center gap-2 mb-1">
-                <Navigation className={`w-4 h-4 ${searchMode === 'region' ? 'text-blue-600' : ''}`} />
-                <strong>{searchMode === 'region' ? '区域查询模式' : '位置选择'}</strong>
-              </p>
-              <p>{searchMode === 'region' ? `当前区域：${regionName || regionCode}` : '在地图上长按（或右键点击）任意位置以设置搜索中心点。'}</p>
-              <p className="mt-2 text-xs font-mono bg-white p-1 rounded border border-slate-100">
-                {searchMode === 'region' ? `区域代码: ${regionCode}` : `纬度: ${lat.toFixed(4)}, 经度: ${lng.toFixed(4)}`}
-              </p>
-              {searchMode === 'region' && (
-                <Button 
-                  variant="link" 
-                  size="sm" 
-                  className="h-auto p-0 text-[10px] text-blue-500 mt-2"
-                  onClick={() => setSearchMode('radius')}
-                >
-                  切换回半径查询模式
-                </Button>
-              )}
+          {/* 折叠控制头 */}
+          <div 
+            className="flex items-center justify-between p-3 bg-white border-b border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors shrink-0"
+            onClick={() => setIsConfigExpanded(!isConfigExpanded)}
+          >
+            <div className="flex items-center gap-2">
+              <Settings className="w-4 h-4 text-slate-500" />
+              <span className="font-medium text-sm text-slate-700">搜索参数与设置</span>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label className="text-xs">搜索半径 (公里)</Label>
-                <Input 
-                  type="number" 
-                  value={radius} 
-                  onChange={e => setSearchParams({ radius: Number(e.target.value) })} 
-                  disabled={searchMode === 'region'}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">过去几天</Label>
-                <Input type="number" value={daysBack} onChange={e => setSearchParams({ daysBack: Number(e.target.value) })} />
-              </div>
-            </div>
-            <Button className="w-full" onClick={handleFetchData} disabled={loading}>
-              {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
-              获取观测数据
-            </Button>
-
-            <div className="pt-4 border-t border-slate-200">
-              <div className="flex items-center justify-between mb-2">
-                <Label>地图显示模式</Label>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-500">3D圆柱</span>
-                  <Switch checked={isHeatmap} onCheckedChange={setIsHeatmap} />
-                  <span className="text-xs text-slate-500">热力图</span>
-                </div>
-              </div>
-            </div>
-            
-            <div className="p-3 bg-blue-50 rounded-lg text-sm text-blue-800">
-              <div className="flex justify-between items-center mb-1">
-                <p><strong>{totalRecordsCount}</strong> 条总观测记录</p>
-                {isBackgroundLoading && (
-                  <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full animate-pulse font-medium">
-                    同步中 {loadProgress.current}/{loadProgress.total}
-                  </span>
-                )}
-              </div>
-              <p><strong>{uniqueSpeciesCodes.length}</strong> 种不同鸟类</p>
-            </div>
+            {isConfigExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
           </div>
 
-          <div className="overflow-y-auto bg-slate-50 p-2 space-y-1 min-h-0">
+          {/* 数据页签配置区 */}
+          {isConfigExpanded && (
+            <div className="p-4 space-y-4 border-b border-slate-100 bg-white shrink-0 overflow-y-auto max-h-[50vh]">
+              <div className={`p-3 border rounded-lg text-sm ${searchMode === 'region' ? 'bg-blue-50 border-blue-200 text-blue-800' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                <p className="flex items-center gap-2 mb-1">
+                  <Navigation className={`w-4 h-4 ${searchMode === 'region' ? 'text-blue-600' : ''}`} />
+                  <strong>{searchMode === 'region' ? '区域查询模式' : '位置选择'}</strong>
+                </p>
+                <p>{searchMode === 'region' ? `当前区域：${regionName || regionCode}` : '在地图上长按（或右键点击）任意位置以设置搜索中心点。'}</p>
+                <p className="mt-2 text-xs font-mono bg-white p-1 rounded border border-slate-100">
+                  {searchMode === 'region' ? `区域代码: ${regionCode}` : `纬度: ${lat.toFixed(4)}, 经度: ${lng.toFixed(4)}`}
+                </p>
+                {searchMode === 'region' && (
+                  <Button 
+                    variant="link" 
+                    size="sm" 
+                    className="h-auto p-0 text-[10px] text-blue-500 mt-2"
+                    onClick={() => setSearchMode('radius')}
+                  >
+                    切换回半径查询模式
+                  </Button>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-xs">搜索半径 (公里)</Label>
+                  <Input 
+                    type="number" 
+                    value={radius} 
+                    onChange={e => setSearchParams({ radius: Number(e.target.value) })} 
+                    disabled={searchMode === 'region'}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">过去几天</Label>
+                  <Input type="number" value={daysBack} onChange={e => setSearchParams({ daysBack: Number(e.target.value) })} />
+                </div>
+              </div>
+              <Button className="w-full" onClick={handleFetchData} disabled={loading}>
+                {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
+                获取观测数据
+              </Button>
+
+              <div className="pt-4 border-t border-slate-200">
+                <div className="flex items-center justify-between mb-2">
+                  <Label>地图显示模式</Label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">3D圆柱</span>
+                    <Switch checked={isHeatmap} onCheckedChange={setIsHeatmap} />
+                    <span className="text-xs text-slate-500">热力图</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="p-3 bg-blue-50 rounded-lg text-sm text-blue-800">
+                <div className="flex justify-between items-center mb-1">
+                  <p><strong>{totalRecordsCount}</strong> 条总观测记录</p>
+                  {isBackgroundLoading && (
+                    <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full animate-pulse font-medium">
+                      同步中 {loadProgress.current}/{loadProgress.total}
+                    </span>
+                  )}
+                </div>
+                <p><strong>{uniqueSpeciesCodes.length}</strong> 种不同鸟类</p>
+              </div>
+            </div>
+          )}
+
+          <div className="overflow-y-auto bg-slate-50 p-2 space-y-1 flex-1 min-h-0">
             {speciesStats.map(stat => {
                 const isSelected = selectedSpecies.includes(stat.code);
                 const isExpanded = expandedSpecies.has(stat.code);
@@ -394,7 +437,7 @@ export default function Sidebar() {
                     
                     {isExpanded && (
                       <div className="bg-slate-50 p-2 border-t border-slate-100 text-xs space-y-2">
-                        {stat.records.sort((a, b) => new Date(b.obsDt).getTime() - new Date(a.obsDt).getTime()).map((rec, i) => (
+                        {stat.records.filter(r => r && r.obsDt).sort((a, b) => new Date(b.obsDt).getTime() - new Date(a.obsDt).getTime()).map((rec, i) => (
                           <div key={i} className="flex flex-col border-b border-slate-200 last:border-0 pb-1.5 pt-1 last:pb-0">
                             <div className="font-medium text-slate-700 truncate" title={rec.locName}>{rec.locName}</div>
                             <div className="flex items-center gap-2 text-[10px] mt-0.5 flex-wrap">
@@ -458,10 +501,11 @@ export default function Sidebar() {
                 const speciesArray = Array.from(speciesGroups.entries()).map(([code, records]) => {
                   const name = taxonomy[code]?.comName || code;
                   const isNotable = notableObservations.some(n => n.speciesCode === code);
-                  const sortedRecords = records.sort((a, b) => new Date(b.obsDt).getTime() - new Date(a.obsDt).getTime());
+                  const validRecords = records.filter(r => r && r.obsDt);
+                  const sortedRecords = validRecords.sort((a, b) => new Date(b.obsDt).getTime() - new Date(a.obsDt).getTime());
                   const latestRecord = sortedRecords[0];
                   return { code, name, isNotable, records: sortedRecords, latestRecord };
-                }).sort((a, b) => b.records.length - a.records.length);
+                }).filter(sp => sp.latestRecord).sort((a, b) => b.records.length - a.records.length);
 
                 return { ...hotspot, locRecords, speciesArray };
               }).sort((a, b) => b.locRecords.length - a.locRecords.length);
@@ -685,5 +729,6 @@ export default function Sidebar() {
         </TabsContent>
       </Tabs>
     </div>
+    </>
   );
 }
